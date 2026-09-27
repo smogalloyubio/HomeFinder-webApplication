@@ -9,6 +9,7 @@ variable "resource_group_name" {
 
 }
 
+
 variable "environment" {
   type        = string
   description = "The environment name to deploy resources into."
