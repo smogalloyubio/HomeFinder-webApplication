@@ -21,5 +21,5 @@ terraform-module/.terraform/*
 terraform-module/terraform/*
 terraform-module/.terraform.lock/*
 terraform-module/.terraform.tfstate/*
-
+ ../terraform-script/.terraform/*
 
