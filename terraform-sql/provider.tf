@@ -2,21 +2,25 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = ">= 3.0"   # works with the 3.x and 4.x provider lines
+      version = ">= 3.0" # works with the 3.x and 4.x provider lines
     }
   }
 }
 
 provider "azurerm" {
-  features {}
+  features {
+    resource_group {
+      prevent_deletion_if_contains_resources = false
+    }
+  }
   #skip_provider_registration = true
-  use_cli                    = false
+  use_cli = false
 
-  environment   = "stack"            
-  metadata_host = "localhost:4577"   
+  environment   = "stack"
+  metadata_host = "localhost:4577"
 
   subscription_id = "00000000-0000-0000-0000-000000000001"
   tenant_id       = "00000000-0000-0000-0000-000000000002"
   client_id       = "00000000-0000-0000-0000-000000000003"
-  client_secret   = "fake-secret"   
+  client_secret   = "fake-secret"
 }

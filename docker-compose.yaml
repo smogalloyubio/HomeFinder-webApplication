@@ -9,3 +9,4 @@ services:
       - ./data:/app/data                           
     environment:
       FLOCI_AZ_TLS_ENABLED: "true"
+     
