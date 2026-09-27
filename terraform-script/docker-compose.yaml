@@ -4,17 +4,10 @@ services:
     image: floci/floci-az:latest
     ports:
       - "4577:4577"
-      #- "6443-6450:6443-6450"
+   
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/app/data
     environment:
       FLOCI_AZ_TLS_ENABLED: "true"
-      FLOCI_AZ_SERVICES_AKS_MOCKED: "false"
-      FLOCI_AZ_SERVICES_ENTRA_ENABLED: "true"
-      FLOCI_AZ_SERVICES_ENTRA_DEFAULT_TENANT_ID: "00000000-0000-0000-0000-000000000002"
-      FLOCI_AZ_SERVICES_ENTRA_TOKEN_LIFETIME_SECONDS: "3599"
-      FLOCI_AZ_SERVICES_ENTRA_VALIDATE_TOKENS: "false"
-      FLOCI_AZ_SERVICES_SQL_ENABLED: "true"
-      FLOCI_AZ_SERVICES_SQL_DATA_PLANE_PROVIDER: "managed"
-      FLOCI_AZ_SERVICES_SQL_ACCEPT_EULA: "Y"
+     
