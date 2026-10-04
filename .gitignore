@@ -9,6 +9,14 @@ coverage/
 floci*
 data*
 terraform/.terraform/*
+**/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfstate.backup
+.terraform.tfstate*
 azure-amd64.vhd
 *terraform-script/terraform.tfstate*
 terraform-script/terraform.tfstate*
@@ -23,5 +31,8 @@ terraform-module/.terraform.lock/*
 terraform-module/.terraform.tfstate/*
  ../terraform-script/.terraform/*
  terraform-script/.terraform/*
- 
-
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform.tfstate*

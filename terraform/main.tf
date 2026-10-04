@@ -1,11 +1,16 @@
+
 data "azurerm_resource_group" "talos" {
   name = var.resource_group_name
 }
 
 data "azurerm_storage_account" "store" {
-  name                = "floci"
+  name                = "hftalosstate2026"
   resource_group_name = data.azurerm_resource_group.talos.name
 }
+
+# ---------------------------------------------------------
+# User Assigned Identity
+# ---------------------------------------------------------
 
 resource "azurerm_user_assigned_identity" "image_builder" {
   name                = "id-talos-image-reader"
@@ -18,6 +23,10 @@ resource "azurerm_role_assignment" "storage_reader" {
   role_definition_name = "Storage Blob Data Reader"
   principal_id         = azurerm_user_assigned_identity.image_builder.principal_id
 }
+
+# ---------------------------------------------------------
+# Virtual Network
+# ---------------------------------------------------------
 
 resource "azurerm_virtual_network" "talos" {
   name                = "vnet-talos"
@@ -32,6 +41,10 @@ resource "azurerm_virtual_network" "talos" {
     managed_by  = "terraform"
   }
 }
+
+# ---------------------------------------------------------
+# Subnets
+# ---------------------------------------------------------
 
 resource "azurerm_subnet" "control_plane" {
   name                 = "snet-control-plane"
@@ -56,6 +69,10 @@ resource "azurerm_subnet" "application_gateway" {
 
   address_prefixes = ["10.0.3.0/24"]
 }
+
+# ---------------------------------------------------------
+# Network Security Groups
+# ---------------------------------------------------------
 
 resource "azurerm_network_security_group" "control_plane" {
   name                = "nsg-control-plane"
@@ -93,16 +110,22 @@ resource "azurerm_network_security_group" "application_gateway" {
   }
 }
 
+# ---------------------------------------------------------
+# Control Plane NSG Rules
+# ---------------------------------------------------------
+
 resource "azurerm_network_security_rule" "control_plane_k8s_api" {
   name                        = "allow-k8s-api-6443"
   priority                    = 100
   direction                   = "Inbound"
   access                      = "Allow"
   protocol                    = "Tcp"
+
   source_port_range           = "*"
   destination_port_range      = "6443"
   source_address_prefix       = "*"
   destination_address_prefix  = "*"
+
   resource_group_name         = data.azurerm_resource_group.talos.name
   network_security_group_name = azurerm_network_security_group.control_plane.name
 }
@@ -113,13 +136,19 @@ resource "azurerm_network_security_rule" "control_plane_talos_api" {
   direction                   = "Inbound"
   access                      = "Allow"
   protocol                    = "Tcp"
+
   source_port_range           = "*"
   destination_port_range      = "50000"
   source_address_prefix       = "*"
   destination_address_prefix  = "*"
+
   resource_group_name         = data.azurerm_resource_group.talos.name
   network_security_group_name = azurerm_network_security_group.control_plane.name
 }
+
+# ---------------------------------------------------------
+# Worker NSG Rules
+# ---------------------------------------------------------
 
 resource "azurerm_network_security_rule" "worker_talos_api" {
   name                        = "allow-talos-api-worker-50000"
@@ -127,10 +156,12 @@ resource "azurerm_network_security_rule" "worker_talos_api" {
   direction                   = "Inbound"
   access                      = "Allow"
   protocol                    = "Tcp"
+
   source_port_range           = "*"
   destination_port_range      = "50000"
   source_address_prefix       = "*"
   destination_address_prefix  = "*"
+
   resource_group_name         = data.azurerm_resource_group.talos.name
   network_security_group_name = azurerm_network_security_group.worker.name
 }
@@ -141,13 +172,60 @@ resource "azurerm_network_security_rule" "worker_app_ingress" {
   direction                   = "Inbound"
   access                      = "Allow"
   protocol                    = "Tcp"
+
   source_port_range           = "*"
   destination_port_range      = "32080"
-  source_address_prefix       = "10.0.3.0/24"
-  destination_address_prefix  = "*"
+
+  source_address_prefix      = "10.0.3.0/24"
+  destination_address_prefix = "*"
+
   resource_group_name         = data.azurerm_resource_group.talos.name
   network_security_group_name = azurerm_network_security_group.worker.name
 }
+
+# ---------------------------------------------------------
+# Application Gateway NSG Rules
+# ---------------------------------------------------------
+
+# Required by Azure Application Gateway V2
+resource "azurerm_network_security_rule" "application_gateway_infrastructure" {
+  name                        = "allow-appgw-infrastructure"
+  priority                    = 100
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+
+  source_port_range           = "*"
+  destination_port_range      = "65200-65535"
+
+  source_address_prefix       = "GatewayManager"
+  destination_address_prefix  = "*"
+
+  resource_group_name         = data.azurerm_resource_group.talos.name
+  network_security_group_name = azurerm_network_security_group.application_gateway.name
+}
+
+# Public HTTP traffic to Application Gateway
+resource "azurerm_network_security_rule" "application_gateway_http" {
+  name                        = "allow-http-80"
+  priority                    = 110
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+
+  source_port_range           = "*"
+  destination_port_range      = "80"
+
+  source_address_prefix      = "Internet"
+  destination_address_prefix = "*"
+
+  resource_group_name         = data.azurerm_resource_group.talos.name
+  network_security_group_name = azurerm_network_security_group.application_gateway.name
+}
+
+# ---------------------------------------------------------
+# NSG / Subnet Associations
+# ---------------------------------------------------------
 
 resource "azurerm_subnet_network_security_group_association" "control_plane" {
   subnet_id                 = azurerm_subnet.control_plane.id
@@ -163,6 +241,10 @@ resource "azurerm_subnet_network_security_group_association" "application_gatewa
   subnet_id                 = azurerm_subnet.application_gateway.id
   network_security_group_id = azurerm_network_security_group.application_gateway.id
 }
+
+# ---------------------------------------------------------
+# NAT Gateway
+# ---------------------------------------------------------
 
 resource "azurerm_public_ip" "nat_gateway" {
   name                = "pip-nat-gateway"
@@ -209,6 +291,10 @@ resource "azurerm_subnet_nat_gateway_association" "worker" {
   nat_gateway_id = azurerm_nat_gateway.talos.id
 }
 
+# ---------------------------------------------------------
+# Control Plane Network Interface
+# ---------------------------------------------------------
+
 resource "azurerm_network_interface" "control_plane" {
   name                = "nic-talos-control-plane-1"
   location            = data.azurerm_resource_group.talos.location
@@ -227,6 +313,10 @@ resource "azurerm_network_interface" "control_plane" {
     managed_by  = "terraform"
   }
 }
+
+# ---------------------------------------------------------
+# Worker Network Interfaces
+# ---------------------------------------------------------
 
 resource "azurerm_network_interface" "worker" {
   count               = 2
@@ -248,6 +338,10 @@ resource "azurerm_network_interface" "worker" {
   }
 }
 
+# ---------------------------------------------------------
+# Application Gateway Public IP
+# ---------------------------------------------------------
+
 resource "azurerm_public_ip" "application_gateway" {
   name                = "pip-application-gateway"
   location            = data.azurerm_resource_group.talos.location
@@ -263,19 +357,19 @@ resource "azurerm_public_ip" "application_gateway" {
   }
 }
 
+# ---------------------------------------------------------
+# Application Gateway
+# ---------------------------------------------------------
+
 resource "azurerm_application_gateway" "talos" {
   name                = "appgw-talos"
   resource_group_name = data.azurerm_resource_group.talos.name
   location            = data.azurerm_resource_group.talos.location
 
   sku {
-    name = "Standard_v2"
-    tier = "Standard_v2"
-  }
-
-  autoscale_configuration {
-    min_capacity = 1
-    max_capacity = 2
+    name     = "Basic"
+    tier     = "Basic"
+    capacity = 1
   }
 
   gateway_ip_configuration {
@@ -284,7 +378,7 @@ resource "azurerm_application_gateway" "talos" {
   }
 
   frontend_ip_configuration {
-    name                   = "appgw-public-frontend"
+    name                 = "appgw-public-frontend"
     public_ip_address_id = azurerm_public_ip.application_gateway.id
   }
 
@@ -293,13 +387,17 @@ resource "azurerm_application_gateway" "talos" {
     port = 80
   }
 
+  # Talos worker node private IPs
   backend_address_pool {
     name = "talos-ingress-backend"
+
     ip_addresses = [
       for nic in azurerm_network_interface.worker : nic.private_ip_address
     ]
   }
 
+  # Application Gateway sends HTTP traffic
+  # to NodePort 32080 on the Talos workers
   backend_http_settings {
     name                  = "nginx-ingress-http"
     cookie_based_affinity = "Disabled"
@@ -325,13 +423,20 @@ resource "azurerm_application_gateway" "talos" {
   }
 }
 
+# ---------------------------------------------------------
+# Talos Snapshot
+# ---------------------------------------------------------
+
 resource "azurerm_snapshot" "talos" {
-  name                 = "snapshot-talos-vhd"
-  location             = data.azurerm_resource_group.talos.location
-  resource_group_name  = data.azurerm_resource_group.talos.name
-  create_option        = "Import"
-  source_uri           = "https://${data.azurerm_storage_account.store.name}.blob.core.windows.net/mystoragecontainer/azure-amd64.vhd"
-  storage_account_id   = data.azurerm_storage_account.store.id
+  name                = "snapshot-talos-vhd"
+  location            = data.azurerm_resource_group.talos.location
+  resource_group_name = data.azurerm_resource_group.talos.name
+
+  create_option = "Import"
+
+  source_uri = "https://${data.azurerm_storage_account.store.name}.blob.core.windows.net/mystoragecontainer/azure-amd64.vhd"
+
+  storage_account_id = data.azurerm_storage_account.store.id
 
   depends_on = [
     azurerm_role_assignment.storage_reader
@@ -344,15 +449,21 @@ resource "azurerm_snapshot" "talos" {
   }
 }
 
+# ---------------------------------------------------------
+# Control Plane Managed Disk
+# ---------------------------------------------------------
+
 resource "azurerm_managed_disk" "control_plane" {
   name                 = "disk-talos-control-plane-1"
   location             = data.azurerm_resource_group.talos.location
   resource_group_name  = data.azurerm_resource_group.talos.name
   storage_account_type = "Standard_LRS"
-  create_option        = "Copy"
-  source_resource_id   = azurerm_snapshot.talos.id
-  disk_size_gb         = 30
-  hyper_v_generation   = "V2"
+
+  create_option      = "Copy"
+  source_resource_id = azurerm_snapshot.talos.id
+
+  disk_size_gb     = 30
+  hyper_v_generation = "V2"
 
   tags = {
     project     = "talos-azure"
@@ -360,6 +471,10 @@ resource "azurerm_managed_disk" "control_plane" {
     managed_by  = "terraform"
   }
 }
+
+# ---------------------------------------------------------
+# Worker Managed Disks
+# ---------------------------------------------------------
 
 resource "azurerm_managed_disk" "worker" {
   count                = 2
@@ -367,10 +482,12 @@ resource "azurerm_managed_disk" "worker" {
   location             = data.azurerm_resource_group.talos.location
   resource_group_name  = data.azurerm_resource_group.talos.name
   storage_account_type = "Standard_LRS"
-  create_option        = "Copy"
-  source_resource_id   = azurerm_snapshot.talos.id
-  disk_size_gb         = 30
-  hyper_v_generation   = "V2"
+
+  create_option      = "Copy"
+  source_resource_id = azurerm_snapshot.talos.id
+
+  disk_size_gb      = 30
+  hyper_v_generation = "V2"
 
   tags = {
     project     = "talos-azure"
@@ -379,23 +496,32 @@ resource "azurerm_managed_disk" "worker" {
   }
 }
 
+# ---------------------------------------------------------
+# Talos Control Plane VM
+# ---------------------------------------------------------
+
 resource "azurerm_linux_virtual_machine" "control_plane" {
-  name                  = "talos-control-plane-1"
-  location              = data.azurerm_resource_group.talos.location
-  resource_group_name   = data.azurerm_resource_group.talos.name
-  size                  = "Standard_D2s_v5"
-  network_interface_ids = [azurerm_network_interface.control_plane.id]
-  admin_username        = "talos"
+  name                = "talos-control-plane-1"
+  location            = data.azurerm_resource_group.talos.location
+  resource_group_name = data.azurerm_resource_group.talos.name
+
+  size = "Standard_D2s_v5"
+
+  network_interface_ids = [
+    azurerm_network_interface.control_plane.id
+  ]
+
+  admin_username = "talos"
 
   disable_password_authentication = true
-  os_managed_disk_id            = azurerm_managed_disk.control_plane.id
 
-   os_disk {
+  os_managed_disk_id = azurerm_managed_disk.control_plane.id
+
+  os_disk {
     caching              = "ReadWrite"
     storage_account_type = "Standard_LRS"
   }
 
-  
   tags = {
     project     = "talos-azure"
     environment = var.environment
@@ -404,24 +530,32 @@ resource "azurerm_linux_virtual_machine" "control_plane" {
   }
 }
 
+# ---------------------------------------------------------
+# Talos Worker VMs
+# ---------------------------------------------------------
+
 resource "azurerm_linux_virtual_machine" "worker" {
-  count                 = 2
-  name                  = "talos-worker-${count.index + 1}"
-  location              = data.azurerm_resource_group.talos.location
-  resource_group_name   = data.azurerm_resource_group.talos.name
-  size                  = "Standard_D2s_v5"
-  network_interface_ids = [azurerm_network_interface.worker[count.index].id]
-  admin_username        = "talos"
+  count               = 2
+  name                = "talos-worker-${count.index + 1}"
+  location            = data.azurerm_resource_group.talos.location
+  resource_group_name = data.azurerm_resource_group.talos.name
+
+  size = "Standard_D2s_v5"
+
+  network_interface_ids = [
+    azurerm_network_interface.worker[count.index].id
+  ]
+
+  admin_username = "talos"
 
   disable_password_authentication = true
-  os_managed_disk_id            = azurerm_managed_disk.worker[count.index].id
 
+  os_managed_disk_id = azurerm_managed_disk.worker[count.index].id
 
- os_disk {
+  os_disk {
     caching              = "ReadWrite"
     storage_account_type = "Standard_LRS"
   }
-
 
   tags = {
     project     = "talos-azure"
