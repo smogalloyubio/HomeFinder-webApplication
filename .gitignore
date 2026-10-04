@@ -36,3 +36,5 @@ terraform-module/.terraform.tfstate/*
 *.tfstate.*
 *.tfstate.backup
 .terraform.tfstate*
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
